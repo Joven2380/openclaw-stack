@@ -37,7 +37,7 @@ def load_agent_config(agent_name: str) -> dict[str, Any]:
     """Load and parse an agent's YAML config file.
 
     Args:
-        agent_name: Agent slug (e.g. "nora", "max"). Must match agents/{agent_name}.yaml.
+        agent_name: Agent slug (e.g. "jake", "dame"). Must match agents/{agent_name}.yaml.
 
     Returns:
         Parsed YAML as a dict.
@@ -72,7 +72,7 @@ def list_agents() -> list[str]:
     """Return slugs of all agents with YAML configs in the agents/ directory.
 
     Returns:
-        Sorted list of agent name strings (e.g. ["analyst", "clay", "lead", "max", "nora"]).
+        Sorted list of agent name strings (e.g. ["dame", "jake", "king", "kobe", "sam"]).
     """
     return sorted(p.stem for p in AGENTS_DIR.glob("*.yaml"))
 

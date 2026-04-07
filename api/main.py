@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="openclaw-stack",
     version=settings.APP_VERSION,
-    description="Multi-agent AI OS for RPQ Truckwide and agency work",
+    description="Multi-agent AI OS for Bottleneck (bottleneck-ai.com)",
     lifespan=lifespan,
 )
 
