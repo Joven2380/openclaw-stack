@@ -4,7 +4,7 @@ Each agent has its own Telegram bot. Incoming updates are matched to an agent
 by comparing the webhook path's bot_token against AGENT_BOT_MAP.
 
 Environment variables (all optional — only configured bots are active):
-    NORA_BOT_TOKEN, MAX_BOT_TOKEN, CLAY_BOT_TOKEN, LEAD_BOT_TOKEN, ANALYST_BOT_TOKEN
+    JAKE_BOT_TOKEN, DAME_BOT_TOKEN, KOBE_BOT_TOKEN, SAM_BOT_TOKEN, KING_BOT_TOKEN
 """
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _BOT_ENV_VARS: dict[str, str] = {
-    "NORA_BOT_TOKEN": "nora",
-    "MAX_BOT_TOKEN": "max",
-    "CLAY_BOT_TOKEN": "clay",
-    "LEAD_BOT_TOKEN": "lead",
-    "ANALYST_BOT_TOKEN": "analyst",
+    "JAKE_BOT_TOKEN": "jake",
+    "DAME_BOT_TOKEN": "dame",
+    "KOBE_BOT_TOKEN": "kobe",
+    "SAM_BOT_TOKEN": "sam",
+    "KING_BOT_TOKEN": "king",
 }
 
 AGENT_BOT_MAP: dict[str, str] = {}  # bot_token → agent_name
@@ -172,7 +172,7 @@ async def register_webhooks(base_url: str) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
     if not AGENT_BOT_MAP:
-        log.warning("register_webhooks_no_bots", hint="Set NORA_BOT_TOKEN etc. in .env")
+        log.warning("register_webhooks_no_bots", hint="Set JAKE_BOT_TOKEN etc. in .env")
         return results
 
     for token, agent_name in AGENT_BOT_MAP.items():

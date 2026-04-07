@@ -1,15 +1,15 @@
 """Smoke test for the full agent execution chain.
 
 Tests:
-  1. Nora (Anthropic/claude-sonnet-4-20250514) — ops query
-  2. Analyst (Qwen/qwq-32b) — analytical query
+  1. Jake (Anthropic/claude-sonnet-4-20250514) — ops query
+  2. King (Qwen/qwq-32b) — analytical query
   3. Memory search — confirms interactions were stored
 
 Usage:
   cd openclaw-stack
   python scripts/test_agent_run.py
 
-Required env vars: DATABASE_URL, ANTHROPIC_API_KEY (for Nora), QWEN_API_KEY (for Analyst).
+Required env vars: DATABASE_URL, ANTHROPIC_API_KEY (for Jake), QWEN_API_KEY (for King).
 Optional: OPENAI_API_KEY (for embeddings — falls back to Ollama if not set).
 """
 
@@ -71,37 +71,36 @@ async def main() -> None:
     pool = get_pool()
 
     # -----------------------------------------------------------------------
-    # Test 1 — Nora (ops query)
+    # Test 1 — Jake (ops query)
     # -----------------------------------------------------------------------
-    print("\n[1/3] Running Nora — fleet availability query...")
+    print("\n[1/3] Running Jake — fleet availability query...")
     try:
         async with pool.acquire() as conn:
-            nora_result = await run_agent(
-                agent_name="nora",
+            jake_result = await run_agent(
+                agent_name="jake",
                 user_message="Ilan ang available trucks natin today? Give me a status summary.",
                 client_id="smoke_test",
                 conn=conn,
             )
-        _print_result("NORA — Fleet Status Query", nora_result)
+        _print_result("JAKE — Fleet Status Query", jake_result)
     except FileNotFoundError as exc:
-        print(f"[ERROR] {exc} — make sure agents/nora.yaml exists")
+        print(f"[ERROR] {exc} — make sure agents/jake.yaml exists")
         sys.exit(1)
     except Exception as exc:
-        print(f"[ERROR] Nora run failed: {exc}")
+        print(f"[ERROR] Jake run failed: {exc}")
         print("  Check ANTHROPIC_API_KEY and network access.")
 
     # -----------------------------------------------------------------------
-    # Test 2 — Analyst (analytical query)
+    # Test 2 — King (analytical query)
     # -----------------------------------------------------------------------
-    print("\n[2/3] Running Analyst — fuel cost analysis...")
-    analyst_ok = False
+    print("\n[2/3] Running King — fuel cost analysis...")
     if not os.getenv("QWEN_API_KEY"):
-        print("  [SKIP] QWEN_API_KEY not set — skipping Analyst test.")
+        print("  [SKIP] QWEN_API_KEY not set — skipping King test.")
     else:
         try:
             async with pool.acquire() as conn:
-                analyst_result = await run_agent(
-                    agent_name="analyst",
+                king_result = await run_agent(
+                    agent_name="king",
                     user_message=(
                         "Compute the average fuel cost per trip for the last 30 days. "
                         "If no data is available yet, describe the analysis methodology "
@@ -110,19 +109,18 @@ async def main() -> None:
                     client_id="smoke_test",
                     conn=conn,
                 )
-            _print_result("ANALYST — Fuel Cost Analysis", analyst_result)
-            analyst_ok = True
+            _print_result("KING — Fuel Cost Analysis", king_result)
         except Exception as exc:
-            print(f"[ERROR] Analyst run failed: {exc}")
+            print(f"[ERROR] King run failed: {exc}")
 
     # -----------------------------------------------------------------------
-    # Test 3 — Memory search (verify Nora interaction was stored)
+    # Test 3 — Memory search (verify Jake interaction was stored)
     # -----------------------------------------------------------------------
-    print("\n[3/3] Verifying memory storage for Nora...")
+    print("\n[3/3] Verifying memory storage for Jake...")
     try:
         async with pool.acquire() as conn:
             memories = await search_memory(
-                agent_name="nora",
+                agent_name="jake",
                 query="trucks available",
                 conn=conn,
                 client_id="smoke_test",

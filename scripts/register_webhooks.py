@@ -4,11 +4,11 @@ Usage:
     cd openclaw-stack
     python scripts/register_webhooks.py --base-url https://openclaw.yourdomain.com
 
-Each configured agent bot (NORA_BOT_TOKEN, MAX_BOT_TOKEN, etc.) gets a webhook
+Each configured agent bot (JAKE_BOT_TOKEN, DAME_BOT_TOKEN, etc.) gets a webhook
 registered at: {base_url}/webhooks/telegram/{bot_token}
 
-Required: at least one of NORA_BOT_TOKEN, MAX_BOT_TOKEN, CLAY_BOT_TOKEN,
-          LEAD_BOT_TOKEN, ANALYST_BOT_TOKEN must be set in your .env.
+Required: at least one of JAKE_BOT_TOKEN, DAME_BOT_TOKEN, KOBE_BOT_TOKEN,
+          SAM_BOT_TOKEN, KING_BOT_TOKEN must be set in your .env.
 """
 
 import argparse
@@ -37,8 +37,8 @@ async def main(base_url: str) -> None:
         print(
             "\n[ERROR] No bot tokens configured.\n"
             "  Set at least one of these in your .env:\n"
-            "    NORA_BOT_TOKEN, MAX_BOT_TOKEN, CLAY_BOT_TOKEN, "
-            "LEAD_BOT_TOKEN, ANALYST_BOT_TOKEN\n"
+            "    JAKE_BOT_TOKEN, DAME_BOT_TOKEN, KOBE_BOT_TOKEN, "
+            "SAM_BOT_TOKEN, KING_BOT_TOKEN\n"
         )
         sys.exit(1)
 
