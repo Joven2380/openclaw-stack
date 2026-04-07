@@ -1,8 +1,8 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies needed by psycopg2 / asyncpg build and curl for healthchecks
+# Install system dependencies needed by asyncpg build and curl for healthchecks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
@@ -14,6 +14,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Non-root user for security
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+USER appuser
 
 EXPOSE 8000
 

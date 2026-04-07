@@ -1,0 +1,27 @@
+bottleneck-ai.com {
+    # Reverse proxy to FastAPI — Caddy handles TLS termination
+    reverse_proxy app:8000
+
+    # Gzip compression
+    encode gzip
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    # Structured access logs
+    log {
+        output stdout
+        format json
+    }
+}
+
+# Redirect bare www → apex
+www.bottleneck-ai.com {
+    redir https://bottleneck-ai.com{uri} permanent
+}
