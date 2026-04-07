@@ -1,0 +1,72 @@
+# ─── Secrets & Environment ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.staging
+*.key
+*.pem
+secrets/
+
+# Client configs never go to git
+config/clients/*
+!config/clients/.gitkeep
+
+# ─── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+MANIFEST
+
+# ─── Testing ─────────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ─── Node / Frontend ─────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.next/
+out/
+
+# ─── Docker ──────────────────────────────────────────────────────────────────────
+*.log
+docker-compose.override.yml
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Database ────────────────────────────────────────────────────────────────────
+*.sqlite
+*.sqlite3
+*.db
+dumps/
+
+# ─── Generated / Runtime ─────────────────────────────────────────────────────────
+uploads/
+outputs/
+temp/
+tmp/
