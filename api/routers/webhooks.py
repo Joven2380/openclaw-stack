@@ -1,18 +1,24 @@
 import asyncpg
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
 
 from api.core.alerts import alert_error
 from api.core.cost_calc import format_cost
 from api.core.logging import get_logger
 from api.core.model_clients import call_model
 from api.core.model_router import TaskType
+from api.core.telegram_dispatch import AGENT_BOT_MAP, dispatch_telegram_update, register_webhooks
 from api.db.database import get_db
 from api.db.queries import get_cost_summary
 from api.models.schemas import TelegramUpdate
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+class RegisterWebhooksRequest(BaseModel):
+    base_url: str
 
 _TELEGRAM_SEND_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
@@ -158,3 +164,56 @@ async def n8n_webhook(request: Request) -> dict:
     payload = await request.json()
     logger.info("n8n_webhook_received", payload=payload)
     return {"received": True}
+
+
+# ── Per-agent Telegram bots ───────────────────────────────────────────────────
+# IMPORTANT: /telegram/register must be defined before /telegram/{bot_token}
+# so FastAPI doesn't swallow "register" as a bot_token path param.
+
+@router.post("/telegram/register")
+async def telegram_register_webhooks(body: RegisterWebhooksRequest) -> dict:
+    """Register Telegram webhooks for all configured agent bots.
+
+    Body: {"base_url": "https://openclaw.yourdomain.com"}
+    Each configured bot gets a webhook at {base_url}/webhooks/telegram/{bot_token}.
+    """
+    results = await register_webhooks(body.base_url)
+    return {
+        "registered": len([r for r in results if r.get("ok")]),
+        "total": len(results),
+        "bots": results,
+    }
+
+
+@router.post("/telegram/{bot_token}")
+async def telegram_agent_webhook(
+    bot_token: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Per-agent Telegram webhook. Returns 200 immediately; processes in background.
+
+    Telegram requires a response within 5 seconds — agent processing happens
+    asynchronously via FastAPI BackgroundTasks so the connection is released fast.
+
+    URL pattern: POST /webhooks/telegram/{bot_token}
+    """
+    if bot_token not in AGENT_BOT_MAP:
+        # Return 200 to Telegram regardless — don't leak which tokens are valid.
+        logger.warning("telegram_unknown_bot_token", suffix=bot_token[-6:] if len(bot_token) >= 6 else bot_token)
+        return {"ok": True}
+
+    try:
+        update = await request.json()
+    except Exception as exc:
+        logger.error("telegram_bad_payload", error=str(exc))
+        return {"ok": True}
+
+    logger.info(
+        "telegram_webhook_received",
+        agent=AGENT_BOT_MAP[bot_token],
+        update_id=update.get("update_id"),
+    )
+
+    background_tasks.add_task(dispatch_telegram_update, bot_token, update)
+    return {"ok": True}

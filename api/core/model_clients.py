@@ -26,6 +26,7 @@ async def call_anthropic(
     model: str = "claude-sonnet-4-6",
     max_tokens: int = 4000,
     system: str | None = None,
+    temperature: float | None = None,
 ) -> dict:
     settings = get_settings()
     if not settings.ANTHROPIC_API_KEY:
@@ -36,6 +37,8 @@ async def call_anthropic(
         kwargs: dict = {}
         if system:
             kwargs["system"] = system
+        if temperature is not None:
+            kwargs["temperature"] = temperature
 
         response = await client.messages.create(
             model=model,
@@ -60,6 +63,7 @@ async def call_openai(
     model: str = "gpt-4o",
     max_tokens: int = 8000,
     system: str | None = None,
+    temperature: float | None = None,
 ) -> dict:
     settings = get_settings()
     if not settings.OPENAI_API_KEY:
@@ -71,11 +75,16 @@ async def call_openai(
             all_messages.append({"role": "system", "content": system})
         all_messages.extend(messages)
 
+        kwargs: dict = {}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+
         client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         response = await client.chat.completions.create(
             model=model,
             max_tokens=max_tokens,
             messages=all_messages,
+            **kwargs,
         )
         return {
             "content": response.choices[0].message.content or "",
@@ -94,6 +103,7 @@ async def call_qwen(
     model: str = "qwen3-30b-a3b",
     max_tokens: int = 8000,
     system: str | None = None,
+    temperature: float | None = None,
 ) -> dict:
     settings = get_settings()
     if not settings.QWEN_API_KEY:
@@ -105,6 +115,10 @@ async def call_qwen(
             all_messages.append({"role": "system", "content": system})
         all_messages.extend(messages)
 
+        kwargs: dict = {}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+
         client = openai.AsyncOpenAI(
             api_key=settings.QWEN_API_KEY,
             base_url=settings.QWEN_BASE_URL,
@@ -113,6 +127,7 @@ async def call_qwen(
             model=model,
             max_tokens=max_tokens,
             messages=all_messages,
+            **kwargs,
         )
         return {
             "content": response.choices[0].message.content or "",
@@ -131,6 +146,7 @@ async def call_ollama(
     model: str = "qwen3:8b",
     max_tokens: int = 1000,
     system: str | None = None,
+    temperature: float | None = None,
 ) -> dict:
     settings = get_settings()
 
@@ -140,6 +156,10 @@ async def call_ollama(
             all_messages.append({"role": "system", "content": system})
         all_messages.extend(messages)
 
+        options: dict = {"num_predict": max_tokens}
+        if temperature is not None:
+            options["temperature"] = temperature
+
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
             response = await client.post(
                 f"{settings.OLLAMA_BASE_URL}/api/chat",
@@ -147,7 +167,7 @@ async def call_ollama(
                     "model": model,
                     "messages": all_messages,
                     "stream": False,
-                    "options": {"num_predict": max_tokens},
+                    "options": options,
                 },
             )
             response.raise_for_status()
@@ -187,15 +207,20 @@ def _build_fallback_config(model_name: str) -> ModelConfig:
     )
 
 
-async def _call_provider(config: ModelConfig, messages: list[dict], system: str | None) -> dict:
+async def _call_provider(
+    config: ModelConfig,
+    messages: list[dict],
+    system: str | None,
+    temperature: float | None = None,
+) -> dict:
     if config.provider == "anthropic":
-        return await call_anthropic(messages, config.model, config.max_tokens, system)
+        return await call_anthropic(messages, config.model, config.max_tokens, system, temperature)
     if config.provider == "openai":
-        return await call_openai(messages, config.model, config.max_tokens, system)
+        return await call_openai(messages, config.model, config.max_tokens, system, temperature)
     if config.provider == "qwen":
-        return await call_qwen(messages, config.model, config.max_tokens, system)
+        return await call_qwen(messages, config.model, config.max_tokens, system, temperature)
     if config.provider == "ollama":
-        return await call_ollama(messages, config.model, config.max_tokens, system)
+        return await call_ollama(messages, config.model, config.max_tokens, system, temperature)
     raise RuntimeError(f"Unknown provider: {config.provider}")
 
 
@@ -204,6 +229,7 @@ async def call_model(
     task_type: TaskType,
     system: str | None = None,
     override_model: str | None = None,
+    temperature: float | None = None,
 ) -> dict:
     """Master dispatch. Routes to the correct provider, retries fallback once on failure."""
     config = ROUTING_TABLE[task_type]
@@ -218,7 +244,7 @@ async def call_model(
         )
 
     try:
-        result = await _call_provider(config, messages, system)
+        result = await _call_provider(config, messages, system, temperature)
         result["provider"] = config.provider
         result["task_type"] = task_type.value
         return result
@@ -238,7 +264,7 @@ async def call_model(
         logger.info("model_trying_fallback", fallback=fallback_config.model, provider=fallback_config.provider)
 
         try:
-            result = await _call_provider(fallback_config, messages, system)
+            result = await _call_provider(fallback_config, messages, system, temperature)
             result["provider"] = fallback_config.provider
             result["task_type"] = task_type.value
             return result
