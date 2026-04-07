@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from api.core.alerts import alert_error
 from api.core.config import get_settings
 from api.core.logging import configure_logging, get_logger
+from api.db.database import close_pool, create_pool
 
 settings = get_settings()
 configure_logging(settings.LOG_LEVEL, settings.APP_ENV)
@@ -23,8 +24,10 @@ _PRODUCTION_ORIGINS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    await create_pool()
     logger.info("openclaw-stack started", version=settings.APP_VERSION, env=settings.APP_ENV)
     yield
+    await close_pool()
     logger.info("openclaw-stack stopped")
 
 

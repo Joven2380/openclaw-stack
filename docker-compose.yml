@@ -24,6 +24,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
+    container_name: openclaw_db
     ports:
       - "5432:5432"
     environment:

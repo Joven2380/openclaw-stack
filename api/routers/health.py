@@ -1,8 +1,8 @@
-import asyncpg
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from api.core.config import get_settings
+from api.db.database import check_db_connection
 
 router = APIRouter()
 
@@ -19,15 +19,8 @@ async def health() -> dict:
 
 @router.get("/ready")
 async def ready() -> JSONResponse:
-    settings = get_settings()
-
-    # Strip SQLAlchemy dialect prefix — asyncpg only understands postgresql://
-    db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
-
     try:
-        conn = await asyncpg.connect(db_url)
-        await conn.execute("SELECT 1")
-        await conn.close()
+        await check_db_connection()
         return JSONResponse({"status": "ready", "db": "ok"})
     except Exception as e:
         return JSONResponse(
