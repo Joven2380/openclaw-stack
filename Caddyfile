@@ -20,8 +20,3 @@ bottleneck-ai.com {
         format json
     }
 }
-
-# Redirect bare www → apex
-www.bottleneck-ai.com {
-    redir https://bottleneck-ai.com{uri} permanent
-}
