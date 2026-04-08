@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
 
+    # ── OPS-AI Bridge ────────────────────────────────────────────────────────────
+    OPSAI_API_URL: str = ""
+    OPSAI_API_KEY: str = ""
+
+    # ── n8n Webhooks ─────────────────────────────────────────────────────────────
+    N8N_BASE_URL: str = ""
+    N8N_WEBHOOK_DAILY_DIGEST: str = ""
+    N8N_WEBHOOK_MANAGER_ALERTS: str = ""
+
     # ── Cost limits ──────────────────────────────────────────────────────────────
     DEFAULT_DAILY_BUDGET_USD: float = 5.00
     GLOBAL_DAILY_BUDGET_USD: float = 50.00

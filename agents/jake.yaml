@@ -9,9 +9,13 @@ provider: anthropic
 temperature: 0.3
 max_tokens: 4000
 tools:
-  - query_trips
   - query_fleet
+  - query_trips
   - query_fuel
+  - get_kpi_summary
+  - get_daily_report
+  - get_pending_approvals
+  - trigger_n8n_webhook
   - send_telegram
   - escalate
 escalation_to: kobe

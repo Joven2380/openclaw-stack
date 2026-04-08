@@ -4,9 +4,9 @@ Tools are async callables that accept a params dict and return a result dict.
 Agents list allowed tools by name in their YAML configs; execute_tool dispatches
 to the registered implementation.
 
-Phase 2 Step 4: Added TOOL_SCHEMAS — Anthropic-format tool definitions that
-agent_runner uses when calling the API with native tool use. Each schema maps
-to a handler in TOOL_REGISTRY.
+Phase A: Rewired query_fleet / query_trips / query_fuel to call OPS-AI API.
+         Added get_kpi_summary, get_daily_report, get_pending_approvals.
+         Added trigger_n8n_webhook wired to real n8n webhook URLs from config.
 
 Adding a new tool:
   1. Define an async function: async def my_tool(params: dict) -> dict
@@ -19,10 +19,10 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Awaitable
 
-import structlog
+import httpx
 
 from api.core.logging import get_logger
-from api.db.database import get_pool
+from api.core.opsai_client import opsai_get
 
 log = get_logger(__name__)
 
@@ -83,66 +83,109 @@ async def tool_send_telegram(params: dict[str, Any]) -> dict[str, Any]:
         return {"sent": False, "error": str(exc)}
 
 
-async def _query_table(
-    table: str,
-    params: dict[str, Any],
-    select_cols: str = "*",
-    limit: int = 20,
-) -> dict[str, Any]:
-    """Generic safe SELECT against a named table using the asyncpg pool."""
-    try:
-        pool = get_pool()
-    except RuntimeError:
-        return {"error": "Database pool not initialized", "rows": []}
-
-    where_clause = params.get("where", "")
-    order_clause = params.get("order_by", "created_at DESC")
-    row_limit = int(params.get("limit", limit))
-
-    sql = f"SELECT {select_cols} FROM {table}"
-    if where_clause:
-        sql += f" WHERE {where_clause}"
-    if order_clause:
-        sql += f" ORDER BY {order_clause}"
-    sql += f" LIMIT {row_limit}"
-
-    try:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(sql)
-        return {
-            "table": table,
-            "count": len(rows),
-            "rows": [dict(r) for r in rows],
-        }
-    except Exception as exc:
-        err_msg = str(exc)
-        if "does not exist" in err_msg or "relation" in err_msg:
-            return {
-                "table": table,
-                "count": 0,
-                "rows": [],
-                "note": f"Table '{table}' not yet populated — run the relevant migration first.",
-            }
-        log.error("tool_query_failed", table=table, error=err_msg)
-        return {"error": err_msg, "table": table, "rows": []}
-
-
 async def tool_query_fleet(params: dict[str, Any]) -> dict[str, Any]:
-    """Query the trucks/fleet table."""
-    params.setdefault("order_by", "plate_number ASC")
-    return await _query_table("trucks", params)
+    """Query fleet/trucks from OPS-AI API."""
+    query_params: dict[str, Any] = {}
+    if params.get("status"):
+        query_params["status"] = params["status"]
+    result = await opsai_get("/api/v1/trucks", params=query_params or None)
+    if "error" in result:
+        return result
+    # Normalize: OPS-AI may return a list or a dict with items/data key
+    rows = result if isinstance(result, list) else result.get("items", result.get("data", [result]))
+    return {"count": len(rows), "trucks": rows}
 
 
 async def tool_query_trips(params: dict[str, Any]) -> dict[str, Any]:
-    """Query the trips table."""
-    params.setdefault("order_by", "trip_date DESC")
-    return await _query_table("trips", params)
+    """Query trips from OPS-AI API with optional date filters."""
+    query_params: dict[str, Any] = {}
+    if params.get("start_date"):
+        query_params["start_date"] = params["start_date"]
+    if params.get("end_date"):
+        query_params["end_date"] = params["end_date"]
+    if params.get("truck_id"):
+        query_params["truck_id"] = params["truck_id"]
+    if params.get("limit"):
+        query_params["limit"] = params["limit"]
+    result = await opsai_get("/api/v1/trips", params=query_params or None)
+    if "error" in result:
+        return result
+    rows = result if isinstance(result, list) else result.get("items", result.get("data", [result]))
+    return {"count": len(rows), "trips": rows}
 
 
 async def tool_query_fuel(params: dict[str, Any]) -> dict[str, Any]:
-    """Query the fuel_logs table."""
-    params.setdefault("order_by", "log_date DESC")
-    return await _query_table("fuel_logs", params)
+    """Query fuel efficiency data from OPS-AI API."""
+    query_params: dict[str, Any] = {}
+    if params.get("start_date"):
+        query_params["start_date"] = params["start_date"]
+    if params.get("end_date"):
+        query_params["end_date"] = params["end_date"]
+    if params.get("truck_id"):
+        query_params["truck_id"] = params["truck_id"]
+    result = await opsai_get("/api/v1/reports/fuel-efficiency", params=query_params or None)
+    if "error" in result:
+        return result
+    return result
+
+
+async def tool_get_kpi_summary(_params: dict[str, Any]) -> dict[str, Any]:
+    """Get weekly KPI dashboard data from OPS-AI."""
+    return await opsai_get("/api/v1/kpis/summary")
+
+
+async def tool_get_daily_report(_params: dict[str, Any]) -> dict[str, Any]:
+    """Get today's operations summary from OPS-AI."""
+    return await opsai_get("/api/v1/reports/daily-summary")
+
+
+async def tool_get_pending_approvals(_params: dict[str, Any]) -> dict[str, Any]:
+    """Get receipts/items pending approval from OPS-AI."""
+    return await opsai_get("/api/v1/bot/pending-approvals")
+
+
+async def tool_trigger_n8n_webhook(params: dict[str, Any]) -> dict[str, Any]:
+    """Trigger an n8n workflow by name via its webhook URL."""
+    from api.core.config import get_settings
+
+    settings = get_settings()
+
+    workflow = params.get("workflow", "").lower().replace("-", "_").replace(" ", "_")
+    payload = params.get("payload", {})
+
+    webhook_map = {
+        "daily_digest": settings.N8N_WEBHOOK_DAILY_DIGEST,
+        "manager_alerts": settings.N8N_WEBHOOK_MANAGER_ALERTS,
+    }
+
+    webhook_path = webhook_map.get(workflow)
+    if not webhook_path:
+        available = [k for k, v in webhook_map.items() if v]
+        return {
+            "triggered": False,
+            "error": f"Unknown or unconfigured workflow '{workflow}'",
+            "available_workflows": available,
+        }
+
+    if not settings.N8N_BASE_URL:
+        return {"triggered": False, "error": "N8N_BASE_URL is not configured"}
+
+    url = f"{settings.N8N_BASE_URL.rstrip('/')}/{webhook_path.lstrip('/')}"
+    log.info("tool_trigger_n8n_webhook", workflow=workflow, url=url)
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            return {"triggered": True, "workflow": workflow, "status": resp.status_code}
+    except httpx.HTTPStatusError as exc:
+        log.error("n8n_webhook_http_error", workflow=workflow, status=exc.response.status_code)
+        return {"triggered": False, "error": f"n8n returned {exc.response.status_code}", "detail": exc.response.text[:300]}
+    except httpx.TimeoutException:
+        return {"triggered": False, "error": "n8n webhook timed out after 15s"}
+    except Exception as exc:
+        log.error("n8n_webhook_failed", workflow=workflow, error=str(exc))
+        return {"triggered": False, "error": str(exc)}
 
 
 async def tool_classify_intent(params: dict[str, Any]) -> dict[str, Any]:
@@ -186,6 +229,10 @@ TOOL_REGISTRY: dict[str, ToolFn] = {
     "query_fleet": tool_query_fleet,
     "query_trips": tool_query_trips,
     "query_fuel": tool_query_fuel,
+    "get_kpi_summary": tool_get_kpi_summary,
+    "get_daily_report": tool_get_daily_report,
+    "get_pending_approvals": tool_get_pending_approvals,
+    "trigger_n8n_webhook": tool_trigger_n8n_webhook,
     "classify_intent": tool_classify_intent,
 }
 
@@ -253,23 +300,15 @@ TOOL_SCHEMAS: dict[str, dict] = {
     "query_fleet": {
         "name": "query_fleet",
         "description": (
-            "Query the trucks/fleet table in OPS-AI. Returns truck records "
-            "with plate numbers, status, assignments. Use for fleet status questions."
+            "Get the list of trucks/fleet from OPS-AI. Returns plate numbers, "
+            "status, and assignments. Use for fleet status and availability questions."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "where": {
+                "status": {
                     "type": "string",
-                    "description": "SQL WHERE clause fragment (e.g. \"status = 'available'\"). Leave empty for all trucks.",
-                },
-                "order_by": {
-                    "type": "string",
-                    "description": "ORDER BY clause. Default: 'plate_number ASC'.",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max rows to return. Default: 20.",
+                    "description": "Filter by truck status (e.g. 'available', 'on_trip', 'maintenance'). Leave empty for all.",
                 },
             },
             "required": [],
@@ -278,23 +317,27 @@ TOOL_SCHEMAS: dict[str, dict] = {
     "query_trips": {
         "name": "query_trips",
         "description": (
-            "Query the trips table in OPS-AI. Returns trip records with "
-            "dates, routes, trucks, drivers, tonnage. Use for trip history and hauling questions."
+            "Get trip records from OPS-AI. Returns trip dates, routes, trucks, drivers, "
+            "and tonnage. Use for trip history, hauling questions, or weekly trip counts."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "where": {
+                "start_date": {
                     "type": "string",
-                    "description": "SQL WHERE clause fragment (e.g. \"truck_id = 'UNIT-07'\").",
+                    "description": "Filter trips from this date (YYYY-MM-DD). Use for 'this week', 'last 7 days' etc.",
                 },
-                "order_by": {
+                "end_date": {
                     "type": "string",
-                    "description": "ORDER BY clause. Default: 'trip_date DESC'.",
+                    "description": "Filter trips up to this date (YYYY-MM-DD).",
+                },
+                "truck_id": {
+                    "type": "string",
+                    "description": "Filter by specific truck ID or plate number.",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Max rows to return. Default: 20.",
+                    "description": "Max number of trips to return. Default: 20.",
                 },
             },
             "required": [],
@@ -303,26 +346,87 @@ TOOL_SCHEMAS: dict[str, dict] = {
     "query_fuel": {
         "name": "query_fuel",
         "description": (
-            "Query the fuel_logs table in OPS-AI. Returns fuel purchase records "
-            "with dates, amounts, prices, trucks. Use for fuel cost and consumption questions."
+            "Get fuel efficiency report from OPS-AI. Returns consumption, costs, "
+            "and efficiency metrics per truck. Use for fuel cost and consumption questions."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "where": {
+                "start_date": {
                     "type": "string",
-                    "description": "SQL WHERE clause fragment (e.g. \"truck_id = 'UNIT-07'\").",
+                    "description": "Filter from this date (YYYY-MM-DD).",
                 },
-                "order_by": {
+                "end_date": {
                     "type": "string",
-                    "description": "ORDER BY clause. Default: 'log_date DESC'.",
+                    "description": "Filter up to this date (YYYY-MM-DD).",
                 },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max rows to return. Default: 20.",
+                "truck_id": {
+                    "type": "string",
+                    "description": "Filter by specific truck ID.",
                 },
             },
             "required": [],
+        },
+    },
+    "get_kpi_summary": {
+        "name": "get_kpi_summary",
+        "description": (
+            "Get the weekly KPI dashboard from OPS-AI. Returns total trips, tonnage, "
+            "active trucks, revenue, and other key performance indicators. "
+            "Use when asked for a business overview, KPIs, or weekly summary."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "get_daily_report": {
+        "name": "get_daily_report",
+        "description": (
+            "Get today's operations summary from OPS-AI. Returns active trips, "
+            "trucks deployed, drivers on duty, and today's highlights. "
+            "Use when asked 'what's happening today' or 'daily status'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "get_pending_approvals": {
+        "name": "get_pending_approvals",
+        "description": (
+            "Get receipts and items waiting for Job's approval from OPS-AI. "
+            "Returns pending fuel receipts, expense claims, and procurement requests. "
+            "Use when asked about pending items, approvals, or what needs review."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "trigger_n8n_webhook": {
+        "name": "trigger_n8n_webhook",
+        "description": (
+            "Trigger an n8n automation workflow by name. Available workflows: "
+            "'daily_digest' (sends morning summary), 'manager_alerts' (checks and sends pending alerts). "
+            "Always confirm with Job before triggering workflows that send messages to others."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "workflow": {
+                    "type": "string",
+                    "description": "Workflow name to trigger: 'daily_digest' or 'manager_alerts'.",
+                },
+                "payload": {
+                    "type": "object",
+                    "description": "Optional JSON payload to pass to the webhook.",
+                },
+            },
+            "required": ["workflow"],
         },
     },
     "classify_intent": {
