@@ -88,7 +88,7 @@ async def tool_query_fleet(params: dict[str, Any]) -> dict[str, Any]:
     query_params: dict[str, Any] = {}
     if params.get("status"):
         query_params["status"] = params["status"]
-    result = await opsai_get("/api/v1/trucks", params=query_params or None)
+    result = await opsai_get("/api/v1/trucks/", params=query_params or None)
     if "error" in result:
         return result
     # Normalize: OPS-AI may return a list or a dict with items/data key
@@ -107,7 +107,7 @@ async def tool_query_trips(params: dict[str, Any]) -> dict[str, Any]:
         query_params["truck_id"] = params["truck_id"]
     if params.get("limit"):
         query_params["limit"] = params["limit"]
-    result = await opsai_get("/api/v1/trips", params=query_params or None)
+    result = await opsai_get("/api/v1/trips/", params=query_params or None)
     if "error" in result:
         return result
     rows = result if isinstance(result, list) else result.get("items", result.get("data", [result]))
@@ -123,7 +123,7 @@ async def tool_query_fuel(params: dict[str, Any]) -> dict[str, Any]:
         query_params["end_date"] = params["end_date"]
     if params.get("truck_id"):
         query_params["truck_id"] = params["truck_id"]
-    result = await opsai_get("/api/v1/reports/fuel-efficiency", params=query_params or None)
+    result = await opsai_get("/api/v1/reports/fuel-efficiency/", params=query_params or None)
     if "error" in result:
         return result
     return result
@@ -131,17 +131,17 @@ async def tool_query_fuel(params: dict[str, Any]) -> dict[str, Any]:
 
 async def tool_get_kpi_summary(_params: dict[str, Any]) -> dict[str, Any]:
     """Get weekly KPI dashboard data from OPS-AI."""
-    return await opsai_get("/api/v1/kpis/summary")
+    return await opsai_get("/api/v1/kpis/summary/")
 
 
 async def tool_get_daily_report(_params: dict[str, Any]) -> dict[str, Any]:
     """Get today's operations summary from OPS-AI."""
-    return await opsai_get("/api/v1/reports/daily-summary")
+    return await opsai_get("/api/v1/reports/daily-summary/")
 
 
 async def tool_get_pending_approvals(_params: dict[str, Any]) -> dict[str, Any]:
     """Get receipts/items pending approval from OPS-AI."""
-    return await opsai_get("/api/v1/bot/pending-approvals")
+    return await opsai_get("/api/v1/bot/pending-approvals/")
 
 
 async def tool_trigger_n8n_webhook(params: dict[str, Any]) -> dict[str, Any]:
