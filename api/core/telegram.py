@@ -95,6 +95,19 @@ class TelegramClient:
                 return {"ok": False, "error": str(exc)}
 
             except httpx.HTTPStatusError as exc:
+                # 400 with parse_mode = Markdown parse error — retry as plain text
+                if exc.response.status_code == 400 and "parse_mode" in payload:
+                    log.warning(
+                        "telegram_markdown_failed",
+                        chat_id=chat_id,
+                        description=exc.response.text[:200],
+                    )
+                    payload.pop("parse_mode")
+                    try:
+                        return await self._post("sendMessage", payload)
+                    except Exception as plain_exc:
+                        log.error("telegram_plain_fallback_failed", chat_id=chat_id, error=str(plain_exc))
+                        return {"ok": False, "error": str(plain_exc)}
                 log.error(
                     "telegram_http_error",
                     chat_id=chat_id,
