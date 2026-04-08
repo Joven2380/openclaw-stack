@@ -268,10 +268,14 @@ async def _run_with_tools(
     tool_calls_made, rounds.
     """
     import anthropic
+    import httpx
     from api.core.config import get_settings
 
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.ANTHROPIC_API_KEY,
+        timeout=httpx.Timeout(120.0, connect=10.0),
+    )
 
     total_tokens_in = 0
     total_tokens_out = 0
